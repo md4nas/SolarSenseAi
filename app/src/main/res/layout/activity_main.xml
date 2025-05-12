@@ -91,4 +91,47 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <Button
+        android:id="@+id/btnVoice"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🎤 Voice Command"
+        app:layout_constraintTop_toBottomOf="@id/btnPanelMax"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="16dp" />
+
+    <ProgressBar
+        android:id="@+id/voiceProgressBar"
+        style="?android:attr/progressBarStyleLarge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/btnVoice"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="8dp"/>
+
+    <Button
+        android:id="@+id/btnShowCommands"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="❓ Voice Commands"
+        app:layout_constraintTop_toBottomOf="@id/voiceProgressBar"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="16dp" />
+
+    <TextView
+        android:id="@+id/txtVoiceCommands"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="• 'Clockwise'\n• 'Counter'\n• 'Panel Angle Zero '\n• 'Panel Angle max'\n• 'Panel Angle Degree' \n• 'Base Angle Degree'"
+        android:textSize="16sp"
+        android:padding="8dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/btnShowCommands"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>
