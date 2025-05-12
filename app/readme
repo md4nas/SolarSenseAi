@@ -1,0 +1,12 @@
+ Now the full supported voice commands are:
+"Clockwise" – base +15°
+
+"Counter" – base -15°
+
+"Base angle 60" or "Base to 60" – base to 60°
+
+"Panel angle zero" or "Panel to zero" – panel to 0°
+
+"Panel angle max" or "Panel max" – panel to 180°
+
+"Panel angle 90" or "Panel to 45" – panel to custom degree
