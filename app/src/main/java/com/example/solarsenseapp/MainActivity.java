@@ -29,6 +29,11 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.Scanner;
 
+import android.widget.ToggleButton;
+import java.util.Calendar;
+import java.util.TimeZone;
+import android.location.Geocoder;
+import android.location.Address;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -48,6 +53,10 @@ public class MainActivity extends AppCompatActivity {
 
     private int baseCurrentAngle = 90;
     private int panelCurrentAngle = 90;
+
+    private ToggleButton toggleAutoMode;
+    private boolean isAutoMode = false;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -197,6 +206,19 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        toggleAutoMode = findViewById(R.id.toggleAutoMode);
+
+        toggleAutoMode.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            isAutoMode = isChecked;
+
+            if (isAutoMode) {
+                disableManualControls();
+                calculateAndSendAzimuth();
+            } else {
+                enableManualControls();
+            }
+        });
+
 
     }
 
@@ -224,6 +246,81 @@ public class MainActivity extends AppCompatActivity {
         new Handler(Looper.getMainLooper()).post(() -> {
             Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
         });
+    }
+
+    private void disableManualControls() {
+        baseServoSeekBar.setEnabled(false);
+        panelServoSeekBar.setEnabled(false);
+        btnBaseClockwise.setEnabled(false);
+        btnBaseCounterClockwise.setEnabled(false);
+        btnPanelToZero.setEnabled(false);
+        btnPanelToMax.setEnabled(false);
+        btnVoice.setEnabled(false);
+    }
+
+    private void enableManualControls() {
+        baseServoSeekBar.setEnabled(true);
+        panelServoSeekBar.setEnabled(true);
+        btnBaseClockwise.setEnabled(true);
+        btnBaseCounterClockwise.setEnabled(true);
+        btnPanelToZero.setEnabled(true);
+        btnPanelToMax.setEnabled(true);
+        btnVoice.setEnabled(true);
+    }
+
+    private void calculateAndSendAzimuth() {
+        String location = locationInput.getText().toString().trim();
+
+        if (location.isEmpty()) {
+            Toast.makeText(this, "Enter location to calculate azimuth", Toast.LENGTH_SHORT).show();
+            toggleAutoMode.setChecked(false);  // Revert toggle
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                Geocoder geocoder = new Geocoder(MainActivity.this);
+                java.util.List<Address> addresses = geocoder.getFromLocationName(location, 1);
+
+                if (addresses == null || addresses.isEmpty()) {
+                    showErrorToast("Location not found");
+                    runOnUiThread(() -> toggleAutoMode.setChecked(false));
+                    return;
+                }
+
+                Address address = addresses.get(0);
+                double latitude = address.getLatitude();
+                double longitude = address.getLongitude();
+
+                // Get current time
+                Calendar calendar = Calendar.getInstance(TimeZone.getDefault());
+                int hour = calendar.get(Calendar.HOUR_OF_DAY);
+                int minute = calendar.get(Calendar.MINUTE);
+                int totalMinutes = hour * 60 + minute;
+
+                // Simplified azimuth (map sunrise to 90°, sunset to 270°)
+                double azimuth = 90 + ((totalMinutes - 360.0) / (1080.0)) * 180.0;
+
+                if (azimuth < 0) azimuth = 0;
+                if (azimuth > 180) azimuth = 180;
+
+                int finalAzimuth = (int) azimuth;
+                baseCurrentAngle = finalAzimuth;
+
+                sendRequest(espIp + "/baseServo?angle=" + finalAzimuth);
+
+                runOnUiThread(() -> {
+                    baseServoSeekBar.setProgress(finalAzimuth);
+                    baseServoValue.setText("Base Servo Angle (Auto): " + finalAzimuth);
+                    Toast.makeText(MainActivity.this, "Auto azimuth angle: " + finalAzimuth, Toast.LENGTH_SHORT).show();
+                });
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                showErrorToast("Azimuth error: " + e.getMessage());
+                runOnUiThread(() -> toggleAutoMode.setChecked(false));
+            }
+        }).start();
     }
 
     private void handleVoiceCommand(String command) {
