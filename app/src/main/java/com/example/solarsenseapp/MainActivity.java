@@ -22,8 +22,21 @@ import android.speech.SpeechRecognizer;
 import android.speech.RecognitionListener;
 import android.graphics.Color;
 import android.content.pm.PackageManager;
+import android.widget.EditText;
+
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.Scanner;
+
 
 public class MainActivity extends AppCompatActivity {
+
+    private EditText locationInput;
+    private Button btnFetchWeather;
+    private TextView weatherDataText;
+
+    private final String API_KEY = "4caa58a2c8523065469f2b1e7bd4c050"; // open Wheteher API
 
     private SeekBar baseServoSeekBar, panelServoSeekBar;
     private TextView baseServoValue, panelServoValue;
@@ -171,12 +184,26 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        locationInput = findViewById(R.id.locationInput);
+        btnFetchWeather = findViewById(R.id.btnFetchWeather);
+        weatherDataText = findViewById(R.id.weatherDataText);
+
+        btnFetchWeather.setOnClickListener(v -> {
+            String location = locationInput.getText().toString().trim();
+            if (!location.isEmpty()) {
+                fetchWeatherData(location);
+            } else {
+                Toast.makeText(this, "Please enter a location", Toast.LENGTH_SHORT).show();
+            }
+        });
+
 
     }
 
     private void sendRequest(String urlStr) {
         new Thread(() -> {
             try {
+                System.out.println("Sending request: " + urlStr);  // Debugging line
                 URL url = new URL(urlStr);
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("GET");
@@ -191,6 +218,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }).start();
     }
+
 
     private void showErrorToast(String message) {
         new Handler(Looper.getMainLooper()).post(() -> {
@@ -242,5 +270,93 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
+    private void fetchWeatherData(String location) {
+        new Thread(() -> {
+            try {
+                String apiUrl = "https://api.openweathermap.org/data/2.5/weather?q=" + location +
+                        "&units=metric&appid=" + API_KEY;
+
+                URL url = new URL(apiUrl);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.connect();
+
+                int responseCode = conn.getResponseCode();
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    showErrorToast("Error fetching weather: " + responseCode);
+                    return;
+                }
+
+                Scanner sc = new Scanner(conn.getInputStream());
+                StringBuilder response = new StringBuilder();
+                while (sc.hasNext()) {
+                    response.append(sc.nextLine());
+                }
+
+                JSONObject jsonObject = new JSONObject(response.toString());
+
+                // Main weather data
+                JSONObject main = jsonObject.getJSONObject("main");
+                double temp = main.getDouble("temp");
+                int humidity = main.getInt("humidity");
+
+                // Wind data
+                JSONObject wind = jsonObject.getJSONObject("wind");
+                double windSpeed = wind.getDouble("speed");
+                double windDeg = wind.has("deg") ? wind.getDouble("deg") : 0;
+                String windDirectionLabel = getWindDirectionLabel(windDeg);
+
+                // Optional rain
+                String rain = "N/A";
+                if (jsonObject.has("rain")) {
+                    JSONObject rainObj = jsonObject.getJSONObject("rain");
+                    rain = rainObj.has("1h") ? rainObj.getDouble("1h") + " mm" : "N/A";
+                }
+
+                // Optional snow
+                String snow = "N/A";
+                if (jsonObject.has("snow")) {
+                    JSONObject snowObj = jsonObject.getJSONObject("snow");
+                    snow = snowObj.has("1h") ? snowObj.getDouble("1h") + " mm" : "N/A";
+                }
+
+                // Weather conditions
+                String thunderstorm = "No";
+                String conditionName = "";
+                JSONArray weatherArray = jsonObject.getJSONArray("weather");
+                for (int i = 0; i < weatherArray.length(); i++) {
+                    conditionName = weatherArray.getJSONObject(i).getString("main");
+                    if (conditionName.toLowerCase().contains("thunderstorm")) {
+                        thunderstorm = "Yes";
+                        break;
+                    }
+                }
+
+                // Final formatted string
+                String weatherInfo = "📍 Location: " + location + "\n" +
+                        "🌤️ Condition: " + conditionName + "\n" +
+                        "🌡️ Temp: " + temp + "°C\n" +
+                        "💧 Humidity: " + humidity + "%\n" +
+                        "🌬️ Wind Speed: " + windSpeed + " m/s\n" +
+                        "🧭 Wind Direction: " + windDeg + "° (" + windDirectionLabel + ")\n" +
+                        "🌧️ Rain: " + rain + "\n" +
+                        "❄️ Snow: " + snow + "\n" +
+                        "⚡ Thunderstorm: " + thunderstorm;
+
+                runOnUiThread(() -> weatherDataText.setText(weatherInfo));
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                showErrorToast("Exception: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    // Helper method to convert degree to direction
+    private String getWindDirectionLabel(double degrees) {
+        String[] directions = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+        return directions[(int) Math.round(((degrees % 360) / 45)) % 8];
+    }
 
 }
