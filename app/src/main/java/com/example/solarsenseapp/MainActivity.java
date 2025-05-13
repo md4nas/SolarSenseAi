@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.RecognitionListener;
+import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -77,6 +78,8 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
     private Runnable autoRunnable;
     private LocationManager locationManager;
     private SpeechRecognizer speechRecognizer;
+    private Button btnResetLocation;
+    private TextToSpeech textToSpeech;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,6 +94,14 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         setupWeatherFetching();
         setupAutoModeToggle();
         initializeLocationService();
+
+        textToSpeech = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                textToSpeech.setLanguage(Locale.getDefault());
+            }
+        });
+
+
     }
 
     // Initialization Methods
@@ -113,10 +124,29 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         txtVoiceCommands = findViewById(R.id.txtVoiceCommands);
         espIpInput = findViewById(R.id.espIpInput);
         btnUpdateIp = findViewById(R.id.btnUpdateIp);
+        btnResetLocation = findViewById(R.id.btnResetLocation);
 
         espIpInput.setText(espIp.replace("http://", ""));
+
+        txtVoiceCommands = findViewById(R.id.txtVoiceCommands);
+        txtVoiceCommands.setText(
+                "Voice Commands:\n" +
+                        "- 'Clockwise' / 'Counter-clockwise' (base rotation)\n" +
+                        "- 'Up' / 'Down' (panel tilt)\n" +
+                        "- 'Panel to zero/max' (panel position)\n" +
+                        "- 'Base to zero/max' (base position)\n" +
+                        "- 'Auto mode on/off'\n" +
+                        "- 'Weather for [location]'\n" +
+                        "- 'Reset location' (clears current location)\n" +
+                        "- '[Number] degrees' (set angle)");
+        txtVoiceCommands.setVisibility(View.GONE);
     }
 
+    private void speakFeedback(String message) {
+        if (textToSpeech != null) {
+            textToSpeech.speak(message, TextToSpeech.QUEUE_FLUSH, null, null);
+        }
+    }
     private void checkAndRequestPermissions() {
         // Check microphone permission
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
@@ -212,8 +242,8 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
 
     private void setupButtons() {
         // Reverse these button actions
-        btnBaseClockwise.setOnClickListener(v -> adjustBaseServo(15));     // Now increases angle
-        btnBaseCounterClockwise.setOnClickListener(v -> adjustBaseServo(-15)); // Now decreases angle
+        btnBaseClockwise.setOnClickListener(v -> adjustBaseServo(-40));     // Now increases angle
+        btnBaseCounterClockwise.setOnClickListener(v -> adjustBaseServo(40)); // Now decreases angle
 
         // Keep panel buttons the same
         btnPanelToZero.setOnClickListener(v -> setPanelServo(0));
@@ -225,6 +255,27 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                 espIp = "http://" + newIp;
                 Toast.makeText(this, "ESP IP updated to: " + espIp, Toast.LENGTH_SHORT).show();
             }
+        });
+
+        //reset location button
+        btnResetLocation.setOnClickListener(v -> {
+            // Clear location input
+            locationInput.setText("");
+
+            // Stop auto tracking if active
+            if (isAutoMode) {
+                toggleAutoMode.setChecked(false);
+                stopAutoMode();
+            }
+
+            // Clear weather display
+            weatherDataText.setText("");
+
+            // Reset current location
+            currentLocation = null;
+
+            // Show confirmation
+            Toast.makeText(MainActivity.this, "Location reset", Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -302,6 +353,30 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
             toggleAutoMode.setChecked(false);
         }
     }
+
+    public void resetLocation() {
+        runOnUiThread(() -> {
+            // Clear UI elements
+            locationInput.setText("");
+            weatherDataText.setText("");
+
+            // Stop auto tracking if active
+            if (isAutoMode) {
+                toggleAutoMode.setChecked(false);
+                stopAutoMode();
+            }
+
+            // Reset location data
+            currentLocation = null;
+
+            // Provide feedback
+            showToast("Location has been reset");
+
+            // Optional: Speak confirmation
+            speakFeedback("Location reset complete");
+        });
+    }
+
 
     private void geocodeAndStartTracking() {
         try {
@@ -418,6 +493,30 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
             return;
         }
 
+        // Initialize voice commands help text
+        txtVoiceCommands.setText(
+                "Supported Voice Commands:\n\n" +
+                        "Base Rotation:\n" +
+                        "- 'Clockwise' (rotate base clockwise)\n" +
+                        "- 'Counter-clockwise'/'Anti-clockwise' (rotate base counter-clockwise)\n\n" +
+                        "Panel Tilt:\n" +
+                        "- 'Up'/'Panel up' (tilt panel up)\n" +
+                        "- 'Down'/'Panel down' (tilt panel down)\n\n" +
+                        "Panel Position:\n" +
+                        "- 'Panel zero'/'Panel Angle zero' (set panel to 0°)\n" +
+                        "- 'Panel max'/'Panel Angle max' (set panel to 180°)\n\n" +
+                        "Base Position:\n" +
+                        "- 'Base zero'/'Base Position zero' (set base to 0°)\n" +
+                        "- 'Base max'/'Base Position max' (set base to 180°)\n\n" +
+                        "Auto Mode:\n" +
+                        "- 'Auto mode on'/'Start tracking' (enable auto tracking)\n" +
+                        "- 'Auto mode off'/'Stop tracking' (disable auto tracking)\n\n" +
+                        "Weather:\n" +
+                        "- 'Weather for [location]' (fetch weather data)\n\n" +
+                        "Location:\n" +
+                        "- 'Reset location'/'Clear location'/'Location reset' (clear current location)");
+        txtVoiceCommands.setVisibility(View.GONE);
+
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
         Intent speechIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         speechIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
@@ -477,20 +576,20 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
 
     private void handleVoiceCommand(String command) {
         if (command.contains("clockwise")) {
-            adjustBaseServo(15);  // Now increases angle
-        } else if (command.contains("counter") || command.contains("anti-clockwise")) {
-            adjustBaseServo(-15); // Now decreases angle
-        } else if (command.contains("up")) {
-            adjustPanelServo(15);
-        } else if (command.contains("down")) {
-            adjustPanelServo(-15);
-        } else if (command.contains("panel zero") || command.contains("panel to zero")) {
+            adjustBaseServo(-40);  // Now increases angle
+        } else if (command.contains("counter") || command.contains("anti-clockwise") || command.contains("counter-clockwise")) {
+            adjustBaseServo(40); // Now decreases angle
+        } else if (command.contains("up") || command.contains("panel up")) {
+            adjustPanelServo(40);
+        } else if (command.contains("down") || command.contains("panel down")) {
+            adjustPanelServo(-40);
+        } else if (command.contains("panel zero") || command.contains("panel Angle zero")) {
             setPanelServo(0);
-        } else if (command.contains("panel max") || command.contains("panel to max")) {
+        } else if (command.contains("panel max") || command.contains("panel Angle max")) {
             setPanelServo(180);
-        } else if (command.contains("base zero") || command.contains("base to zero")) {
+        } else if (command.contains("base zero") || command.contains("base Position zero")) {
             setBaseServo(0);
-        } else if (command.contains("base max") || command.contains("base to max")) {
+        } else if (command.contains("base max") || command.contains("base Position max")) {
             setBaseServo(180);
         } else if (command.contains("auto mode on") || command.contains("start tracking")) {
             runOnUiThread(() -> toggleAutoMode.setChecked(true));
@@ -498,7 +597,9 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
             runOnUiThread(() -> toggleAutoMode.setChecked(false));
         } else if (command.contains("weather")) {
             handleWeatherVoiceCommand(command);
-        } else {
+        } else if (command.contains("reset location") || command.contains("clear location") || command.contains("location reset")) {
+            resetLocation();
+        }else {
             extractAndSetAngle(command);
         }
     }
@@ -749,6 +850,10 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         }
         if (locationManager != null) {
             locationManager.removeUpdates(this);
+        }
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
         }
         autoHandler.removeCallbacks(autoRunnable);
     }
