@@ -1,5 +1,7 @@
 package com.example.solarsenseapp;
 
+import static androidx.constraintlayout.motion.widget.Debug.getLocation;
+
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -17,9 +19,11 @@ import android.speech.RecognitionListener;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.ToggleButton;
@@ -37,6 +41,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Scanner;
@@ -74,6 +79,13 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
     private Runnable autoRunnable;
     private LocationManager locationManager;
     private SpeechRecognizer speechRecognizer;
+    private boolean isAutoModeEnabled = false;
+    private double latitude = 0.0;
+    private double longitude = 0.0;
+    private Handler handler = new Handler();
+    private Runnable autoUpdater;
+    private Handler azimuthHandler = new Handler();
+    private Runnable azimuthUpdater;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,8 +100,154 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         setupWeatherFetching();
         setupAutoModeToggle();
         initializeLocationService();
+        setupAzimuthUpdater();
+
+    }
+    private void setupAutoModeToggle() {
+        autoRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isAutoMode) {
+                    if (currentLocation != null) {
+                        // Calculate and send new panel position based on sun position
+                        latitude = currentLocation.getLatitude();
+                        longitude = currentLocation.getLongitude();
+                        Date now = new Date();
+                        double azimuth = calculateAzimuth(latitude, longitude, now);
+                        double elevation = calculateElevation(latitude, longitude, now);
+
+                        // Convert angles to servo positions (0-180)
+                        int baseAngle = (int) Math.round(azimuth % 180);
+                        int panelAngle = (int) Math.round(elevation % 180);
+
+                        // Update UI
+                        runOnUiThread(() -> {
+                            baseServoSeekBar.setProgress(baseAngle);
+                            baseServoValue.setText("Base Servo Angle: " + baseAngle);
+                            panelServoSeekBar.setProgress(panelAngle);
+                            panelServoValue.setText("Panel Servo Angle: " + panelAngle);
+                        });
+
+                        // Send commands to ESP
+                        sendRequest(espIp + "/baseServo?angle=" + baseAngle);
+                        sendRequest(espIp + "/panelServo?angle=" + panelAngle);
+
+                        Log.d("AutoMode", "Adjusted panel to azimuth: " + azimuth + ", elevation: " + elevation);
+                    } else {
+                        String location = locationInput.getText().toString().trim();
+                        if (!location.isEmpty()) {
+                            calculatePanelAngleFromLocation(location);
+                        } else {
+                            runOnUiThread(() -> {
+                                Toast.makeText(MainActivity.this,
+                                        "No location available for auto mode",
+                                        Toast.LENGTH_SHORT).show();
+                                toggleAutoMode.setChecked(false);
+                            });
+                        }
+                    }
+                    autoHandler.postDelayed(this, 300000); // 5 minutes
+                }
+            }
+        };
+
+        toggleAutoMode.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            isAutoMode = isChecked;
+            isAutoModeEnabled = isChecked;
+            if (isAutoMode) {
+                disableManualControls();
+
+                // Immediately calculate and set initial position
+                if (currentLocation != null) {
+                    autoHandler.post(autoRunnable); // Start the tracking loop
+                } else {
+                    // Try to get location from text input
+                    String location = locationInput.getText().toString().trim();
+                    if (!location.isEmpty()) {
+                        calculatePanelAngleFromLocation(location);
+                        autoHandler.post(autoRunnable); // Start the tracking loop
+                    } else {
+                        runOnUiThread(() -> {
+                            Toast.makeText(MainActivity.this,
+                                    "Enable GPS or enter location for auto mode",
+                                    Toast.LENGTH_LONG).show();
+                            toggleAutoMode.setChecked(false);
+                        });
+                    }
+                }
+            } else {
+                enableManualControls();
+                autoHandler.removeCallbacks(autoRunnable);
+            }
+        });
     }
 
+    // elevation calculation method
+    private double calculateElevation(double latitude, double longitude, Date date) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(date);
+        int dayOfYear = cal.get(Calendar.DAY_OF_YEAR);
+
+        // Approximate declination angle (δ)
+        double decl = 23.45 * Math.sin(Math.toRadians(360.0 / 365.0 * (284 + dayOfYear)));
+
+        double hourAngle = (cal.get(Calendar.HOUR_OF_DAY) - 12) * 15;  // degrees
+        double latRad = Math.toRadians(latitude);
+        double declRad = Math.toRadians(decl);
+        double hourRad = Math.toRadians(hourAngle);
+
+        // Solar elevation angle calculation
+        double elevation = Math.toDegrees(Math.asin(
+                Math.sin(latRad) * Math.sin(declRad) +
+                        Math.cos(latRad) * Math.cos(declRad) * Math.cos(hourRad)
+        ));
+
+        return elevation;
+    }
+
+    private void setupAzimuthUpdater() {
+        azimuthUpdater = new Runnable() {
+            @Override
+            public void run() {
+                if (isAutoModeEnabled && currentLocation != null) {
+                    latitude = currentLocation.getLatitude();
+                    longitude = currentLocation.getLongitude();
+                    Date now = new Date();
+                    double azimuth = calculateAzimuth(latitude, longitude, now);
+                    sendAzimuthToESP8266(azimuth);
+                    azimuthHandler.postDelayed(this, 600000); // Every 10 minutes
+                }
+            }
+        };
+    }
+
+    private void sendAzimuthToESP8266(double azimuth) {
+        // Convert azimuth to servo angle (0-180) if needed
+        int servoAngle = (int) Math.round(azimuth % 180);
+        String url = espIp + "/autoAzimuth?angle=" + servoAngle;
+        sendRequest(url);
+    }
+
+    public static double calculateAzimuth(double latitude, double longitude, Date date) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(date);
+        int dayOfYear = cal.get(Calendar.DAY_OF_YEAR);
+
+        // Approximate declination angle (δ)
+        double decl = 23.45 * Math.sin(Math.toRadians(360.0 / 365.0 * (284 + dayOfYear)));
+
+        double hourAngle = (cal.get(Calendar.HOUR_OF_DAY) - 12) * 15;  // degrees
+        double latRad = Math.toRadians(latitude);
+        double declRad = Math.toRadians(decl);
+        double hourRad = Math.toRadians(hourAngle);
+
+        double azimuth = Math.toDegrees(Math.acos(
+                (Math.sin(declRad) - Math.sin(latRad) * Math.sin(declRad)) /
+                        (Math.cos(latRad) * Math.cos(declRad))
+        ));
+
+        return azimuth;  // returns angle to send to servo
+    }
     private void initializeUI() {
         baseServoSeekBar = findViewById(R.id.baseServoSeekBar);
         panelServoSeekBar = findViewById(R.id.panelServoSeekBar);
@@ -396,43 +554,6 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         });
     }
 
-    private void setupAutoModeToggle() {
-        autoRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (isAutoMode) {
-                    if (currentLocation != null) {
-                        updatePanelPosition();
-                    } else {
-                        String location = locationInput.getText().toString().trim();
-                        if (!location.isEmpty()) {
-                            calculatePanelAngleFromLocation(location);
-                        } else {
-                            runOnUiThread(() -> {
-                                Toast.makeText(MainActivity.this,
-                                        "No location available for auto mode",
-                                        Toast.LENGTH_SHORT).show();
-                                toggleAutoMode.setChecked(false);
-                            });
-                        }
-                    }
-                    autoHandler.postDelayed(this, 300000); // 5 minutes
-                }
-            }
-        };
-
-        toggleAutoMode.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            isAutoMode = isChecked;
-            if (isAutoMode) {
-                disableManualControls();
-                autoHandler.post(autoRunnable);
-            } else {
-                enableManualControls();
-                autoHandler.removeCallbacks(autoRunnable);
-            }
-        });
-    }
-
     private void disableManualControls() {
         baseServoSeekBar.setEnabled(false);
         panelServoSeekBar.setEnabled(false);
@@ -578,50 +699,81 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
             double windDeg = wind.has("deg") ? wind.getDouble("deg") : 0;
             String windDirectionLabel = getWindDirectionLabel(windDeg);
 
-            String rain = "N/A";
-            if (jsonObject.has("rain")) {
-                JSONObject rainObj = jsonObject.getJSONObject("rain");
-                rain = rainObj.has("1h") ? rainObj.getDouble("1h") + " mm" : "N/A";
-            }
+            // Weather condition tracking
+            String weatherCondition = "Clear";
+            String weatherIcon = "☀️";
+            double rainAmount = 0;
+            double snowAmount = 0;
+            boolean isThunderstorm = false;
 
-            String snow = "N/A";
-            if (jsonObject.has("snow")) {
-                JSONObject snowObj = jsonObject.getJSONObject("snow");
-                snow = snowObj.has("1h") ? snowObj.getDouble("1h") + " mm" : "N/A";
-            }
-
-            String thunderstorm = "No";
-            String conditionName = "";
             JSONArray weatherArray = jsonObject.getJSONArray("weather");
             for (int i = 0; i < weatherArray.length(); i++) {
-                conditionName = weatherArray.getJSONObject(i).getString("main");
-                if (conditionName.toLowerCase().contains("thunderstorm")) {
-                    thunderstorm = "Yes";
-                    break;
+                JSONObject weatherObj = weatherArray.getJSONObject(i);
+                weatherCondition = weatherObj.getString("main");
+                String description = weatherObj.getString("description").toLowerCase();
+
+                if (weatherCondition.equalsIgnoreCase("Rain")) {
+                    weatherIcon = "🌧️";
+                } else if (weatherCondition.equalsIgnoreCase("Snow")) {
+                    weatherIcon = "❄️";
+                } else if (weatherCondition.equalsIgnoreCase("Thunderstorm")) {
+                    weatherIcon = "⚡";
+                    isThunderstorm = true;
+                } else if (weatherCondition.equalsIgnoreCase("Clouds")) {
+                    weatherIcon = "☁️";
                 }
             }
 
-            final String weatherInfo = "📍 Location: " + location + "\n" +
-                    "🌤️ Condition: " + conditionName + "\n" +
-                    "🌡️ Temp: " + temp + "°C\n" +
-                    "💧 Humidity: " + humidity + "%\n" +
-                    "🌬️ Wind Speed: " + windSpeed + " m/s\n" +
-                    "🧭 Wind Direction: " + windDeg + "° (" + windDirectionLabel + ")\n" +
-                    "🌧️ Rain: " + rain + "\n" +
-                    "❄️ Snow: " + snow + "\n" +
-                    "⚡ Thunderstorm: " + thunderstorm;
+            // Get precipitation amounts
+            if (jsonObject.has("rain")) {
+                JSONObject rainObj = jsonObject.getJSONObject("rain");
+                rainAmount = rainObj.has("1h") ? rainObj.getDouble("1h") : 0;
+            }
+            if (jsonObject.has("snow")) {
+                JSONObject snowObj = jsonObject.getJSONObject("snow");
+                snowAmount = snowObj.has("1h") ? snowObj.getDouble("1h") : 0;
+            }
 
-            // Create final copies of variables needed in the lambda
-            final String finalWeatherInfo = weatherInfo;
-            final String finalConditionName = conditionName.toLowerCase();
+            // Create final variables for use in lambda
+            final String finalWeatherCondition = weatherCondition;
+            final String finalWeatherIcon = weatherIcon;
+            final double finalRainAmount = rainAmount;
+            final double finalSnowAmount = snowAmount;
+            final boolean finalIsThunderstorm = isThunderstorm;
 
             runOnUiThread(() -> {
-                weatherDataText.setText(finalWeatherInfo);
-                if (finalConditionName.contains("rain") || finalConditionName.contains("cloud")) {
-                    // Suggest flattening panel during bad weather
-                    Toast.makeText(MainActivity.this,
-                            "Bad weather detected - consider adjusting panel",
-                            Toast.LENGTH_LONG).show();
+                // Update the main weather display
+                String weatherInfo = String.format(Locale.getDefault(),
+                        "%s Weather in %s\n\n" +
+                                "🌡️ Temperature: %.1f°C\n" +
+                                "💧 Humidity: %d%%\n" +
+                                "🌬️ Wind: %.1f m/s %s\n" +
+                                "%s Rain: %.1f mm\n" +
+                                "%s Snow: %.1f mm\n" +
+                                "%s Thunderstorm: %s",
+                        finalWeatherIcon, location, temp, humidity,
+                        windSpeed, windDirectionLabel,
+                        finalRainAmount > 0 ? "🌧️" : "  ", finalRainAmount,
+                        finalSnowAmount > 0 ? "❄️" : "  ", finalSnowAmount,
+                        finalIsThunderstorm ? "⚡" : "  ", finalIsThunderstorm ? "Yes" : "No");
+
+                weatherDataText.setText(weatherInfo);
+
+                // Show weather alerts
+                if (finalWeatherCondition.equalsIgnoreCase("Rain") ||
+                        finalWeatherCondition.equalsIgnoreCase("Snow") ||
+                        finalWeatherCondition.equalsIgnoreCase("Thunderstorm")) {
+
+                    String alertMessage = "⚠️ " + finalWeatherCondition + " detected!";
+                    Toast.makeText(MainActivity.this, alertMessage, Toast.LENGTH_LONG).show();
+
+                    // For thunderstorms, automatically flatten panel
+                    if (finalWeatherCondition.equalsIgnoreCase("Thunderstorm")) {
+                        setPanelServo(0); // Flat position for safety
+                        Toast.makeText(MainActivity.this,
+                                "DANGER: Setting panel to flat position",
+                                Toast.LENGTH_LONG).show();
+                    }
                 }
             });
 
@@ -632,6 +784,10 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         }
     }
 
+    private String formatPrecipitation(double amount, String type) {
+        if (amount <= 0) return "None";
+        return String.format(Locale.getDefault(), "%.1f mm %s", amount, type);
+    }
     private String getWindDirectionLabel(double degrees) {
         String[] directions = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
         return directions[(int) Math.round(((degrees % 360) / 45)) % 8];

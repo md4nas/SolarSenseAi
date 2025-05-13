@@ -2,4 +2,5 @@
 <resources>
     <item name="espIpInput" type="id" />
     <item name="btnUpdateIp" type="id" />
+    <item name="autoModeSwitch" type="id" />
 </resources>

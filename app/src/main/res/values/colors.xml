@@ -4,4 +4,8 @@
     <color name="white">#FFFFFFFF</color>
     <color name="gold">#FFD700</color>
     <color name="primary_dark">#263238</color>
+    <color name="red">#F44336</color>
+    <color name="light_red">#FFEBEE</color>
+    <color name="blue">#2196F3</color>
+    <color name="light_blue">#E3F2FD</color>
 </resources>
