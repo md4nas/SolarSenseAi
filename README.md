@@ -1,6 +1,6 @@
 🌞 SolarSense: Smart Solar Tracking System
 
-🎥 Video Demo: Watch Here
+🎥 Video Demo:[ Watch Here](https://youtu.be/xqA-Qie9Vjc)
 
 🧾 Description
 
@@ -22,9 +22,9 @@ The objective of SolarSense is to provide a low-cost, low-power solar tracking s
 
 📂 Project Repositories
 
-🔌 ESP8266 Firmware + Hardware Control:github.com/md4nas/SolarSenseEsp8266
+🔌 ESP8266 Firmware + Hardware Control
 
-📲 Android Application & Sun Position Logic:github.com/md4nas/SolarSenseAi
+📲 [Android Application & Sun Position Logic](https://github.com/md4nas/SolarSenseAi)
 
 🚀 Key Features
 
@@ -95,3 +95,4 @@ SolarSense is a compact, scalable, and budget-friendly solar tracker built for r
 Future upgrades may include weather APIs, solar radiation sensors, or remote cloud logging.
 
 👨‍💻 Developed by: Anas (md4nas)
+
