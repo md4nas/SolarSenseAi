@@ -419,9 +419,9 @@ MIT License - Free for commercial and non-commercial use
 
 ### **Developer**
 👨‍💻 **Anas (md4nas)**  
-📧 Email: [your-email@example.com]  
+📧 Email: [md.anas1028@gmail.com]  
 🐙 GitHub: [@md4nas](https://github.com/md4nas)  
-🔗 LinkedIn: [Your LinkedIn Profile]
+🔗 LinkedIn: [Mohd Anas](https://www.linkedin.com/in/anas-md-887b621b4/)
 
 ### **Project Links**
 🏠 **Main Repository**: [SolarSense ESP8266 Firmware](https://github.com/md4nas/SolarSense)  
